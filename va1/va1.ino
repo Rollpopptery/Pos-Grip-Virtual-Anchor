@@ -17,6 +17,10 @@
 
 // Globals
 
+
+// IO Mapping ---Arduino LEONARDO---
+//
+
 int DIGITAL_HOME_SENSE = 2;
 int DIGITAL_STEER_MOTOR = 12;
 int DIGITAL_STEER_DIR = 11;
