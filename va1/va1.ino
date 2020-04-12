@@ -14,6 +14,8 @@
 //-------------------------------------------------------------------
 
 
+#include "steering.h"
+
 
 // Globals
 
@@ -21,31 +23,36 @@
 // IO Mapping ---Arduino LEONARDO---
 //
 
-int DIGITAL_HOME_SENSE = 2;
+int DIGITAL_HOME_SENSE = 7;
 int DIGITAL_STEER_MOTOR = 12;
 int DIGITAL_STEER_DIR = 11;
+int DIGITAL_STEER_FB = 3;    // feedback pulses from steering motor (can have interrupts)
 
+extern Steering steering;
 
 void setup() {
   
   pinMode(DIGITAL_HOME_SENSE, INPUT_PULLUP);
 
-  pinMode(DIGITAL_STEER_DIR, OUTPUT);
-  digitalWrite(DIGITAL_STEER_DIR, 1);
-
-
-  pinMode(DIGITAL_STEER_MOTOR, OUTPUT);
-  digitalWrite(DIGITAL_STEER_MOTOR, 0);
-
+ 
   Serial.begin(9600);
   while (!Serial) {
     ; // wait for serial port to connect. Needed for Leonardo only
   }  
 
-  delay(1000);
+  delay(200);
 
+  steering.Init();
 
-  //steering_home();
+  
+
+  
+ // home the steering
+ //
+ homeRoutine();
+ //steering.StartMove(ANTICLOCK, 5, 40000);
+ steering.RotateToAngle(270);  
+
 
 }
 
@@ -53,16 +60,18 @@ void setup() {
 
 void loop() {
   
-  delay(1000);
+  
+  // Call the various statemachines (effectively simultaneous threads)
+  //
+  Steering_StateMachine();
+
+  
+    
   
 
-  Serial.println(" re ");
   
 
-  //digitalWrite(DIGITAL_STEER_MOTOR, 1);
-  //delay(5000);
-  //digitalWrite(DIGITAL_STEER_MOTOR, 0);
-  //delay(5000);
+ 
   
 
 }

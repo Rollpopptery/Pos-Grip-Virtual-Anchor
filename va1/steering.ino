@@ -14,22 +14,31 @@
 //
 //-------------------------------------------------------------------
 
+//--------------------------------------------------------------
+//  JGB37 Brushless Gear  Motor, 100 RPM
+// 
+// WIRE COLOURS
+//-------------------
+//
+// RED =   Power 12V
+// BLACK = 0V gnd
+// YELLOW = 'FG'   pulses feedback, open collector (pull to ground)
+// WHITE =  Direction control  CW or CCW
+// BLUE - not used
+//
+
+
+#include "steering.h"
 
 
 extern int DIGITAL_HOME_SENSE ;
 extern int DIGITAL_STEER_MOTOR ;
 extern int DIGITAL_STEER_DIR ;
+extern int DIGITAL_STEER_FB ;
 
-const int CLOCKWISE = 1;
-const int ANTICLOCK = 0;
 
-// can't use enums until Arduino fixes them up,
-// so they don't have to be put in a header file
-// until then, use constants
-//
-const int POS_UNKOWN = 0;
-const int POS_HOME_CLOCKWISE = 1;
-const int POS_HOME_ANTICLOCK = 2;
+
+
 
 // Steering Motor control
 //
@@ -49,46 +58,12 @@ const int POS_HOME_ANTICLOCK = 2;
 // We know at this stage we are at one of the two known positions.
 //
 // As we rotate away from the home sensor (we must always rotate away from the Home position), 
-// The poistion of the steering motor becomes Unkown again.
+// The poistion of the steering motor becomes Unknown again.
 //
 
 
 
 
-//Class with the state of the steering,
-// Also, control functions for Steering
-//
-class Steering{ 
-
-  public:
-  
-  // State of the steering 
-  //
-  // if this is greater than 0, then the motor is moving
-  //
-  int motorSpeed  ;
-  int motorDirection  ;
-
-  // timer, shows the start time of the current movement
-  //
-  unsigned long timer  ;
-  unsigned long duration ;
-
-  // Steering position
-  //
-  int Position ;
-
- 
-  void Stop();
-  void StartMove(int dir, int Speed, unsigned long timeout);
-
-  // called whenever we are moving
-  //
-  void checkForPosSensor();
-  
-  
-  
-};
 
 
 // The object
@@ -97,6 +72,8 @@ Steering steering;
 
 
 
+// Called repeatedly whenever the motor is moving
+// 
 // The hall effect home sensor; check to see if we have hit it, 
 // Stop the motor if we have
 // Maintain the position variable
@@ -105,35 +82,262 @@ void Steering::checkForPosSensor()
 {
   int homeSense = digitalRead(DIGITAL_HOME_SENSE);
 
-  if (homeSense == 0)
+  if ((homeSense == 0))
   {
     // we have hit the home sensor   
-    // stop the motor 
+    // Allow movement, if we are attempting to move away from the sensor in the correct direction
+    // Otherwise keep the motor stopped.
     //
-    Stop();
-
-    // We know our position
-    //    
-    if (motorDirection == CLOCKWISE)
+    if (Position == POS_UNKNOWN)
     {
-      Position = POS_HOME_CLOCKWISE;      
+      // Stop the motor
+      //
+      Stop(); 
     }
-    else
-    {
-      Position = POS_HOME_ANTICLOCK;
-    }     
-  }
-  else
+     
+
+    if (motorDirection == CLOCKWISE)
+      {
+        // we are full rotated clockwise
+        //
+        Position = POS_HOME_ANTICLOCK;
+        AnglePulses =  MAX_ANGLE;
+      }      
+   else
+      {
+        Position = POS_HOME_CLOCKWISE;
+        AnglePulses =  0;
+      }
+      
+    }      
+   
+  
+  else  // home sensor is 1
   {
     // if the sensor is 1, then we don't know where we are
-    //
-    Position = POS_UNKOWN;
+    // 
+    Position = POS_UNKNOWN;
     
   }
      
 }
 
 
+
+// Go to an angle 
+// Angle between 1 and 359 degrees
+//
+void Steering::RotateToAngle(int angle)
+{
+  int pulse_angle = 0;
+  int dir = CLOCKWISE;
+  double temp = 0.0;
+  
+  if ((angle < 1) or (angle > 359))
+  {
+    // invalid angle
+    //
+    return;
+  }
+
+  // convert angle from degrees to motor pulses
+  //
+  temp = (float)angle * (MAX_ANGLE/ MAX_ANGLE_DEGREES);
+  pulse_angle = (int)temp;
+  TargetAnglePulses = pulse_angle;
+
+  
+  // what direction should we move in ?
+  //
+
+  if (TargetAnglePulses > AnglePulses)
+  {
+    dir = CLOCKWISE;
+  }
+  else
+  {
+    dir = ANTICLOCK;
+  }
+  
+
+  
+  // start the motor
+  //
+  StartMove(dir, 5, 10000);
+  motorState = ANGLE_MOVE;
+ 
+  
+  
+}
+
+
+//
+// Called repeatdedly to drive the motor slowly
+// This controls speed with fairly long pulses of motor power
+//
+void Steering::SlowMovement()
+{
+  // milli seconds
+  //
+  const unsigned int timeOn = 10;
+  const unsigned int timeOff = 100;
+  static int state = 0;
+  
+  static unsigned long moveTimer = millis();
+
+  unsigned long now = millis();
+
+  if (state == 1)
+  {
+    // we are in motor ON pulse
+    //
+     if ((now - moveTimer)  > timeOn)
+     {
+        // reset the timer
+        //
+        moveTimer = now;
+        
+        // motor OFF
+        //
+        state = 0;
+        digitalWrite(DIGITAL_STEER_MOTOR, 0);         
+     }   
+     
+  }
+  else 
+  {
+    // we are in the OFF pulse
+    //
+    if ((now - moveTimer) > timeOff)
+    {
+      // reset the timer
+      //
+      moveTimer = now;
+          
+      // motor ON
+      //
+      state = 1;
+      digitalWrite(DIGITAL_STEER_MOTOR, 1);    
+    }
+  }    
+}
+
+
+
+//
+// Called repeatdedly to drive the motor quickly
+// This controls speed with fairly long pulses of motor power
+//
+void Steering::FastMovement()
+{
+  // milli seconds
+  //
+  const unsigned int timeOn = 50;
+  const unsigned int timeOff = 100;
+  static int state = 0;
+  
+  static unsigned long moveTimer = millis();
+
+  unsigned long now = millis();
+
+  digitalWrite(DIGITAL_STEER_MOTOR, 1);  
+
+  return;
+  
+  if (state == 1)
+  {
+    // we are in motor ON pulse
+    //
+     if ((now - moveTimer)  > timeOn)
+     {
+        // reset the timer
+        //
+        moveTimer = now;
+        
+        // motor OFF
+        //
+        state = 0;
+        digitalWrite(DIGITAL_STEER_MOTOR, 0);         
+     }   
+     
+  }
+  else 
+  {
+    // we are in the OFF pulse
+    //
+    if ((now - moveTimer) > timeOff)
+    {
+      // reset the timer
+      //
+      moveTimer = now;
+          
+      // motor ON
+      //
+      state = 1;
+      digitalWrite(DIGITAL_STEER_MOTOR, 1);    
+    }
+  }    
+}
+
+
+//-------------------------------------------------------------
+// interrupt called whenever motor gives us a pulse
+//
+void fb_pulse()
+{
+  if (steering.motorDirection)
+  {
+    // clockwise
+    //
+    steering.AnglePulses++;
+  }
+  else
+  {
+    // anti clockwise
+    //
+    steering.AnglePulses--;
+    
+  }
+  
+}
+
+
+
+void Steering::Init()
+{
+  int homeSense = 0;
+
+  // setup digital IO
+  //
+
+  pinMode(DIGITAL_STEER_DIR, OUTPUT);
+  digitalWrite(DIGITAL_STEER_DIR, 1);
+
+  pinMode(DIGITAL_STEER_MOTOR, OUTPUT);
+  digitalWrite(DIGITAL_STEER_MOTOR, 0);
+
+  pinMode(DIGITAL_STEER_FB, INPUT);
+  attachInterrupt(digitalPinToInterrupt(DIGITAL_STEER_FB), fb_pulse, FALLING);
+
+  
+  AnglePulses = 0 ;
+
+  
+  
+  homeSense = digitalRead(DIGITAL_HOME_SENSE);
+
+  if (homeSense == 0)
+  {
+    // assume we are in home from the clockwise direction !!
+    //
+    Position = POS_HOME_CLOCKWISE;
+  }
+  else
+  {
+    Position = POS_UNKNOWN;
+  }
+  
+}
 
 void Steering::Stop()
 {
@@ -142,7 +346,8 @@ void Steering::Stop()
 
   // update the state to 'stopped'
   //
-  motorSpeed = 0;
+  motorSpeed = 0; 
+  digitalWrite(DIGITAL_STEER_MOTOR, 0);
   
   
 }
@@ -160,125 +365,137 @@ void Steering::StartMove(int dir, int Speed, unsigned long timeout)
   //
   timer = millis();
   duration = timeout;
+
+  motorSpeed = Speed;
+  motorDirection = dir;
   
   digitalWrite(DIGITAL_STEER_DIR, dir);
-  digitalWrite(DIGITAL_STEER_MOTOR, 1);
+
+  // actual motor control is handled elsewhere
+  //
+  //digitalWrite(DIGITAL_STEER_MOTOR, 1);
   
 }
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//---- ignore below here
-
-
-// generic move function, includes breaking pause
+// debug messages, when needed
 //
-// dir = direction
+void printDebug()
+{
+  Serial.print("Speed: ");
+  Serial.println(steering.motorSpeed);
+
+  Serial.print("Direction: ");
+  Serial.println(steering.motorDirection);
+
+  Serial.print("Angle in Pulses: ");
+  Serial.println(steering.AnglePulses);
+
+  Serial.print("Target Angle in Pulses: ");
+  Serial.println(steering.TargetAnglePulses);
+
+  Serial.print("Motor STATE: ");
+  Serial.println(steering.motorState);
+
+  Serial.print(" Home sensor: ");
+  Serial.println(digitalRead(DIGITAL_HOME_SENSE));
+    
+  Serial.print("Position: ");
+  if (steering.Position == POS_UNKNOWN)
+  {
+    Serial.println("UNKNOWN");    
+  }
+  else if (steering.Position ==  POS_HOME_CLOCKWISE)
+  {
+    Serial.println("POS_HOME_CLOCKWISE");    
+  }
+  else if (steering.Position ==  POS_HOME_ANTICLOCK)
+  {
+    Serial.println("POS_HOME_ANTICLOCK");    
+  }
+  else
+  {
+    Serial.println("ERROR");    
+  }
+  Serial.println();
+  
+}
+
+
+//-----------------------------------------------------------------------
+// only called once, on Power ON
+// contains delays
 //
+//------------------------------------------------------------------------
 
-void Mmove(int dir)
+void homeRoutine()
 {
+    int homeSense = 0;
 
-  if (dir > 1)  return;
-  if (dir < 0) return;  
-  
-
-  // stop
-  //
-  digitalWrite(DIGITAL_STEER_MOTOR, 0);
-  delay(500);
-
-  // start movement
-  //
-  digitalWrite(DIGITAL_STEER_DIR, dir);
-  digitalWrite(DIGITAL_STEER_MOTOR, 1);
-  
-  
-}
+    steering.motorState = HOMING;
+    
+    homeSense = digitalRead(DIGITAL_HOME_SENSE);
 
 
-void smallMove(int dir)
-{
-  digitalWrite(DIGITAL_STEER_DIR, dir);
-  digitalWrite(DIGITAL_STEER_MOTOR, 1);
-  delay(50);  
-  digitalWrite(DIGITAL_STEER_MOTOR, 0);
-  delay(100);
+    // move clockwise a little bit
+    //
+    steering.StartMove(CLOCKWISE, 5, 40000);   
+    digitalWrite(DIGITAL_STEER_MOTOR, 1);
+    delay(50);
+    
+    // if we are off the sensor, we were on the clockwise side of the home position
+    //
+    
+    
+    steering.StartMove(ANTICLOCK, 5, 40000);   
+    homeSense = digitalRead(DIGITAL_HOME_SENSE);
+
+    // move anti-clockwise if we were on the sensor
+    //
+    while(homeSense == 0)
+    {
+       steering.SlowMovement();
+       homeSense = digitalRead(DIGITAL_HOME_SENSE);
+    }
+
+    // move clockwise until hit the sensor
+    //
+    steering.Stop();
+    steering.StartMove(CLOCKWISE, 5, 40000);   
+
+    while(homeSense == 1)
+    {
+       steering.SlowMovement();
+       homeSense = digitalRead(DIGITAL_HOME_SENSE);
+    }
+
+    steering.Stop();
+    steering.Position = POS_HOME_ANTICLOCK;  // home and can move anti-clockwise
+    steering.AnglePulses = 0;
+    steering.motorState == NORMAL;
+
+    steering.StartMove(ANTICLOCK, 5, 40000); 
+
+    // we roughly know our absolute angle (fully rotated clockwise)
+    //
+    steering.AnglePulses = Steering::MAX_ANGLE ;
+       
+
+    // make sure we are off the sensor
+    //
+    digitalWrite(DIGITAL_STEER_MOTOR, 1);
+    delay(50);
+    steering.Stop();
+
+    steering.motorState = NORMAL;
  
-  
-  
-}
-
-void Mstop()
-{
-  digitalWrite(DIGITAL_STEER_MOTOR, 0);
-}
-
-
-void steering_home()
-{
-  
-
-  int homeSense = digitalRead(DIGITAL_HOME_SENSE);
-  unsigned long timeout = millis();
-
-
-  Mmove(ANTICLOCK);
-  delay(2000);
-
-
-  timeout = millis();
- 
-
-  while(  (((unsigned long) millis() - timeout) < 10000)   && (homeSense == 1) )
-  {
-    smallMove(CLOCKWISE);   
-    homeSense =  digitalRead(DIGITAL_HOME_SENSE);
-    Serial.println(homeSense);
-  }
-
-  delay(1000);
-
-  // Stop motor
-  //
-  Mstop();
-  
-
-
-  // Motor Anti-Clockwise
-  //
-  timeout = millis();
-  
-  
-  while(  (((unsigned long) millis() - timeout) < 10000)   && (homeSense == 0) )
-  {
-   
-    smallMove(ANTICLOCK);
-    homeSense =  digitalRead(DIGITAL_HOME_SENSE);
-    Serial.println(homeSense);
-  }
-
-  // Stop motor
-  //
-  Mstop();
+        
+    
+              
   
 }
-
 
 
 //--------------------------------------------------------------------
@@ -287,21 +504,64 @@ void steering_home()
 //
 void Steering_StateMachine()
 {
+  static unsigned long debugTimer = millis();
+
+  static float previous_angle_error = 9999;
+  float angle_error = 0.0;
+
+  if ((millis() - debugTimer) > 2000)
+  {
+    debugTimer = millis();
+    printDebug();
+   
+  }
+  
   // is Steering moving ? , monitor the timeout
   //
-  if (steering.motorSpeed > 0)
-  {
-    if ( (unsigned long)(millis() - steering.timer) > steering.duration)
-    {
-      // finished move / timeout
-      //
-      steering.Stop();    
-      
-    }
+  if (steering.motorSpeed > 0)  
+  {     
+    
+         if ( (millis() - steering.timer) > steering.duration)
+         {
+              // finished move / timeout
+              //
+              steering.Stop();         
+          }
+          steering.FastMovement();
+          steering.checkForPosSensor(); 
 
-    // check for home sensor
-    //
-    steering.checkForPosSensor();    
-  } 
-  
+          // if we are doing a 'move to angle'
+          // we monitor for passing the angle
+          //
+          angle_error = fabs(steering.AnglePulses - steering.TargetAnglePulses);
+          
+          if (steering.motorState == ANGLE_MOVE)
+          {
+            
+            if (angle_error <= previous_angle_error)
+            {
+              // we are still moving towards our angle
+            }
+            else
+            {
+              // we just passed our target angle
+              //
+              steering.Stop();
+              steering.motorState == NORMAL;
+            }
+            previous_angle_error = angle_error;           
+
+          }
+          else
+          {
+            previous_angle_error = angle_error;
+          }
+          
+          
+
+
+                 
+    
+           
+  }   
 }
