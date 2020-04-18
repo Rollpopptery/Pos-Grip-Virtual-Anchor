@@ -62,7 +62,7 @@ class Steering{
   
   // called frequently by state machine/s
   //
-  void checkForPosSensor();
+  void checkForPosSensor();  
   void SlowMovement();
   void FastMovement();
  

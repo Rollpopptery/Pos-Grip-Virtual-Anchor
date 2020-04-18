@@ -512,7 +512,7 @@ void Steering_StateMachine()
   if ((millis() - debugTimer) > 2000)
   {
     debugTimer = millis();
-    printDebug();
+    //printDebug();
    
   }
   
