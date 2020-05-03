@@ -9,6 +9,9 @@
 // Two GPS recievers are used to give orientation and position of the Vessel 
 // Communication with the chosen GPS modules is quite bulky , they are polled at the minimum rate.
 // 
+//  U-BLOX  NEMA receivers,  set to 2Hz update,  GPGGA messages only.
+//
+//
 // --- Device Arduino LEONARDO ---
 //
 // Modified 18-April-2020  RVW
